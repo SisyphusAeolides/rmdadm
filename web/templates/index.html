@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>rmdadm - RAID Management Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-server"></i>
+                    <h1>rmdadm</h1>
+                    <span class="version">v1.0.0</span>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-icon" id="refreshBtn" title="Refresh">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button class="btn btn-icon" id="settingsBtn" title="Settings">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                    <button class="btn btn-danger" id="logoutBtn">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Login Modal -->
+        <div id="loginModal" class="modal">
+            <div class="modal-content">
+                <h2><i class="fas fa-lock"></i> Login</h2>
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <div id="loginError" class="error-message"></div>
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-sign-in-alt"></i> Login
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- System Overview -->
+            <section class="overview">
+                <div class="card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-chart-line"></i> System Overview</h2>
+                        <span class="last-update">Last updated: <span id="lastUpdate">--</span></span>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card stat-success">
+                            <div class="stat-icon">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="healthyArrays">0</div>
+                                <div class="stat-label">Healthy Arrays</div>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-warning">
+                            <div class="stat-icon">
+                                <i class="fas fa-exclamation-triangle"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="degradedArrays">0</div>
+                                <div class="stat-label">Degraded Arrays</div>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-danger">
+                            <div class="stat-icon">
+                                <i class="fas fa-times-circle"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="failedArrays">0</div>
+                                <div class="stat-label">Failed Arrays</div>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-info">
+                            <div class="stat-icon">
+                                <i class="fas fa-hdd"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="totalDevices">0</div>
+                                <div class="stat-label">Total Devices</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RAID Arrays -->
+            <section class="arrays">
+                <div class="card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-database"></i> RAID Arrays</h2>
+                        <button class="btn btn-primary" id="createArrayBtn">
+                            <i class="fas fa-plus"></i> Create Array
+                        </button>
+                    </div>
+                    <div id="arraysContainer" class="arrays-container">
+                        <div class="loading">
+                            <i class="fas fa-spinner fa-spin"></i> Loading arrays...
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Recent Events -->
+            <section class="events">
+                <div class="card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-bell"></i> Recent Events</h2>
+                        <button class="btn btn-secondary btn-sm" id="clearEventsBtn">
+                            <i class="fas fa-trash"></i> Clear
+                        </button>
+                    </div>
+                    <div id="eventsContainer" class="events-container">
+                        <div class="event-item event-info">
+                            <div class="event-icon"><i class="fas fa-info-circle"></i></div>
+                            <div class="event-content">
+                                <div class="event-message">Dashboard initialized</div>
+                                <div class="event-time" id="initTime">--</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Create Array Modal -->
+        <div id="createArrayModal" class="modal">
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h2><i class="fas fa-plus-circle"></i> Create RAID Array</h2>
+                    <button class="modal-close" id="closeCreateModal">&times;</button>
+                </div>
+                <form id="createArrayForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="arrayName">Array Name</label>
+                            <input type="text" id="arrayName" name="name" placeholder="/dev/md0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="raidLevel">RAID Level</label>
+                            <select id="raidLevel" name="level" required>
+                                <option value="0">RAID 0 (Striping)</option>
+                                <option value="1" selected>RAID 1 (Mirroring)</option>
+                                <option value="4">RAID 4 (Parity)</option>
+                                <option value="5">RAID 5 (Distributed Parity)</option>
+                                <option value="6">RAID 6 (Double Parity)</option>
+                                <option value="10">RAID 10 (Mirrored Stripes)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="chunkSize">Chunk Size (KB)</label>
+                            <input type="number" id="chunkSize" name="chunk_size" value="512" min="4" max="32768">
+                        </div>
+                        <div class="form-group">
+                            <label for="metadata">Metadata Version</label>
+                            <select id="metadata" name="metadata">
+                                <option value="1.2" selected>1.2 (Default)</option>
+                                <option value="1.1">1.1</option>
+                                <option value="1.0">1.0</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="devices">Devices (comma-separated)</label>
+                        <input type="text" id="devices" name="devices" placeholder="/dev/sdb1,/dev/sdc1" required>
+                        <small>Enter device paths separated by commas</small>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="dryRun" name="dry_run" checked>
+                            Dry run (test without creating)
+                        </label>
+                    </div>
+                    <div id="createError" class="error-message"></div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelCreateBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-plus"></i> Create Array
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Array Details Modal -->
+        <div id="arrayDetailsModal" class="modal">
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h2><i class="fas fa-info-circle"></i> Array Details</h2>
+                    <button class="modal-close" id="closeDetailsModal">&times;</button>
+                </div>
+                <div id="arrayDetailsContent" class="array-details">
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i> Loading details...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

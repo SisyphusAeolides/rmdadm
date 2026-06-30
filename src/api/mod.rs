@@ -7,6 +7,7 @@ pub mod models;
 pub mod openapi;
 pub mod rate_limit;
 pub mod routes;
+pub mod web;
 
 use axum::{
     Router,
@@ -97,6 +98,7 @@ pub async fn start_server(addr: SocketAddr, config: crate::config::Config) -> Re
     tokio::spawn(crate::daemon::run_monitor_loop());
 
     let app = Router::new()
+        .merge(routes::web_routes())
         .merge(routes::swagger_routes())
         .merge(routes::auth_routes(auth_state.clone()))
         .merge(routes::array_routes(auth_state.clone()))

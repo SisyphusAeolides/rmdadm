@@ -4,7 +4,7 @@
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 
-A modern, high-performance rewrite of `mdadm` in Rust with a REST API, real-time monitoring, and comprehensive management capabilities for Linux software RAID arrays.
+A modern, high-performance rewrite of `mdadm` in Rust with a REST API, Web UI dashboard, real-time monitoring, and comprehensive management capabilities for Linux software RAID arrays.
 
 ## 🚀 Features
 
@@ -15,12 +15,20 @@ A modern, high-performance rewrite of `mdadm` in Rust with a REST API, real-time
 - ✅ **Dry-run mode** - Test operations safely before execution
 - ✅ **Array operations** - Add, remove, fail disks dynamically
 
+### Web UI Dashboard
+- 🎨 **Modern Interface** - Dark-themed, responsive web dashboard
+- 📊 **Real-time Monitoring** - Live array status and health metrics
+- 🔐 **Secure Access** - JWT authentication with role-based permissions
+- 📱 **Mobile Responsive** - Works on desktop, tablet, and mobile
+- ⚡ **Interactive Management** - Create, stop, and manage arrays from the browser
+
 ### REST API & Monitoring
 - 🔐 **JWT Authentication** - Secure API access with role-based permissions
 - 🔑 **API Key Support** - Simple authentication for automation
 - 🚦 **Rate Limiting** - Protect against abuse (configurable)
 - 📊 **Prometheus Metrics** - Export array health metrics
 - 🔔 **Webhook Alerts** - Real-time notifications for degraded arrays
+- 📧 **Email Notifications** - SMTP alerts with HTML formatting
 - 📚 **OpenAPI/Swagger** - Interactive API documentation
 - 💓 **Health Checks** - Service status and uptime monitoring
 
@@ -48,7 +56,7 @@ A modern, high-performance rewrite of `mdadm` in Rust with a REST API, real-time
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/rmdadm.git
+git clone https://github.com/SisyphusCode/rmdadm.git
 cd rmdadm
 
 # Build release binary
@@ -56,6 +64,10 @@ cargo build --release
 
 # Install system-wide
 sudo make install
+
+# Install web UI files
+sudo mkdir -p /usr/share/rmdadm/web
+sudo cp -r web/* /usr/share/rmdadm/web/
 
 # Install systemd service
 sudo cp systemd/rmdadm.service /etc/systemd/system/
@@ -81,6 +93,21 @@ sudo systemctl restart rmdadm.service
 ```
 
 ## 📖 Usage
+
+### Web Dashboard
+
+Access the modern web interface at `http://localhost:8080/`
+
+**Default Credentials:**
+- Username: `admin`
+- Password: `changeme` (⚠️ Change in production!)
+
+**Features:**
+- Real-time array monitoring with auto-refresh
+- System overview with health statistics
+- Interactive array management (create, stop, scrub)
+- Event logging and notifications
+- Mobile-responsive design
 
 ### Command Line Interface
 
@@ -211,6 +238,15 @@ monitoring:
   enabled: true
   interval_seconds: 60
   webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK"
+  email:
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    smtp_username: "your-email@gmail.com"
+    smtp_password: "your-app-password"
+    from_address: "rmdadm@localhost"
+    to_addresses:
+      - "admin@example.com"
+      - "ops@example.com"
 
 # Logging
 logging:
@@ -242,6 +278,15 @@ Environment variables override configuration file settings:
 - `RMDADM_WEBHOOK_URL` - Webhook URL for alerts
 - `RMDADM_MONITOR_INTERVAL` - Monitoring interval in seconds
 
+**Email Notifications:**
+- `RMDADM_EMAIL_ENABLED` - Enable email notifications
+- `RMDADM_SMTP_HOST` - SMTP server hostname
+- `RMDADM_SMTP_PORT` - SMTP server port
+- `RMDADM_SMTP_USERNAME` - SMTP username
+- `RMDADM_SMTP_PASSWORD` - SMTP password
+- `RMDADM_EMAIL_FROM` - From email address
+- `RMDADM_EMAIL_TO` - Comma-separated recipient emails
+
 **Logging:**
 - `RUST_LOG` - Log level (trace, debug, info, warn, error)
 
@@ -258,6 +303,8 @@ Environment variables override configuration file settings:
 - [ ] Review and restrict API access
 - [ ] Enable audit logging
 - [ ] Regular security updates
+- [ ] Configure email notifications
+- [ ] Test backup and recovery procedures
 
 ### Role-Based Access Control
 
@@ -293,6 +340,27 @@ Alert format:
 }
 ```
 
+### Email Notifications
+
+Configure SMTP settings for email alerts:
+
+```bash
+export RMDADM_EMAIL_ENABLED=true
+export RMDADM_SMTP_HOST=smtp.gmail.com
+export RMDADM_SMTP_PORT=587
+export RMDADM_SMTP_USERNAME=your-email@gmail.com
+export RMDADM_SMTP_PASSWORD=your-app-password
+export RMDADM_EMAIL_FROM=rmdadm@localhost
+export RMDADM_EMAIL_TO=admin@example.com,ops@example.com
+```
+
+Email alerts include:
+- HTML-formatted messages
+- Alert severity levels (Info, Warning, Critical)
+- Detailed array information
+- Recommended actions
+- Direct links to web dashboard
+
 ## 🧪 Testing
 
 ```bash
@@ -311,6 +379,7 @@ cargo test --test api_tests
 
 ## 📚 Documentation
 
+- **Web Dashboard**: http://localhost:8080/
 - **API Documentation**: http://localhost:8080/swagger-ui/
 - **Configuration**: See `rmdadm.conf.example`
 - **Man Pages**: `man rmdadm` (after installation)
@@ -353,6 +422,8 @@ Contributions are welcome! Please follow these guidelines:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
 ### Code Style
 
 - Follow Rust standard formatting (`cargo fmt`)
@@ -370,17 +441,27 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Built with [Axum](https://github.com/tokio-rs/axum) web framework
 - Uses [Tokio](https://tokio.rs/) async runtime
 - API documentation with [utoipa](https://github.com/juhaku/utoipa)
+- Email notifications with [lettre](https://github.com/lettre/lettre)
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/rmdadm/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/rmdadm/discussions)
-- **Email**: your-email@example.com
+- **Issues**: [GitHub Issues](https://github.com/SisyphusCode/rmdadm/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/SisyphusCode/rmdadm/discussions)
+- **Email**: SisyphusCode@protonmail.com
 
 ## 🗺️ Roadmap
 
-- [ ] Web UI dashboard
-- [ ] Email notifications
+### Completed ✅
+- [x] Web UI dashboard
+- [x] Email notifications
+- [x] JWT/API key authentication
+- [x] Rate limiting
+- [x] OpenAPI documentation
+- [x] Configuration file support
+- [x] Webhook alerts
+- [x] Prometheus metrics
+
+### Planned 🚧
 - [ ] RAID reshape operations
 - [ ] Bitmap support
 - [ ] Hot spare management
@@ -395,4 +476,4 @@ This software is provided "as is" without warranty. Always backup your data befo
 
 ---
 
-**Made with ❤️ and Rust**
+**Made with ❤️ and Rust by SisyphusCode**

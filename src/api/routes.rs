@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 
 use super::handlers::{self, AppState};
 use super::auth::{self, AuthState, UserRole};
+use super::web;
 use utoipa_swagger_ui::SwaggerUi;
 use utoipa::OpenApi;
 
@@ -67,4 +68,12 @@ pub fn swagger_routes() -> Router {
     SwaggerUi::new("/swagger-ui")
         .url("/api-docs/openapi.json", super::openapi::ApiDoc::openapi())
         .into()
+}
+
+/// Web UI routes (dashboard)
+pub fn web_routes() -> Router {
+    Router::new()
+        .route("/", get(web::serve_dashboard))
+        .route("/dashboard", get(web::serve_dashboard))
+        .route("/static/*path", get(web::serve_static))
 }

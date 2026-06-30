@@ -9,6 +9,7 @@ mod validation;
 mod logging;
 mod api;
 mod daemon;
+mod notifications;
 
 use clap::Parser;
 use cli::{Cli, Command};
