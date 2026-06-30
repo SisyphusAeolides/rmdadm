@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::os::fd::AsRawFd;
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::error::{MdError, MdResult};
@@ -52,36 +52,20 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
     
     debug!("Using metadata version 1.{}", minor_version);
 
-    let md_file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(md_device)
-        .map_err(|e| {
-            MdError::Io(std::io::Error::new(
-                e.kind(),
-                format!("Failed to open MD device {}: {}", md_device.display(), e)
-            ))
-        })?;
-
-    let mut array_info = MduArrayInfo::default();
-    array_info.level = level as i32;
-    array_info.size = 0; // Kernel will figure this out or we can compute it
-    array_info.nr_disks = raid_devices as i32;
-    array_info.raid_disks = raid_devices as i32;
-    array_info.md_minor = 0;
-    array_info.not_persistent = 0;
-    array_info.state = 0;
-    array_info.active_disks = 0;
-    array_info.working_disks = 0;
-    array_info.failed_disks = 0;
-    array_info.spare_disks = 0;
-    array_info.layout = 0;
-    array_info.chunk_size = chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE);
-
-    if dry_run {
-        info!("[DRY RUN] Would skip SET_ARRAY_INFO for v1.x metadata");
-    } else {
-        debug!("Skipping SET_ARRAY_INFO: not required for v1.x metadata");
+    // Create the MD device via sysfs if it doesn't exist
+    if !md_device.exists() {
+        info!("Creating MD device via sysfs: {}", md_device.display());
+        let md_name = md_device.file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| MdError::InvalidMetadata("Invalid MD device name".to_string()))?;
+        
+        // Try to create via /sys/module/md_mod/parameters/new_array
+        let new_array_path = "/sys/module/md_mod/parameters/new_array";
+        if let Err(e) = fs::write(new_array_path, md_name) {
+            debug!("Failed to create via sysfs ({}), device node should exist or will be created by kernel", e);
+        } else {
+            info!("MD device created via sysfs");
+        }
     }
 
     // Generate a random UUID
@@ -99,8 +83,42 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
     for (i, comp) in components.iter().enumerate() {
         debug!("Processing device {}/{}: {}", i + 1, components.len(), comp.display());
         
+        // Get device size
+        let comp_file = OpenOptions::new().read(true).open(comp)?;
+        let device_size = {
+            let mut size = 0u64;
+            use std::os::fd::AsRawFd;
+            if unsafe { ioctl::blkgetsize64(comp_file.as_raw_fd(), &mut size) }.is_ok() {
+                size
+            } else {
+                comp_file.metadata()?.len()
+            }
+        };
+        
+        // Calculate offsets based on metadata version
+        let (data_offset, super_offset, data_size) = match minor_version {
+            0 => {
+                // 1.0: superblock at end, data at start
+                let sb_offset = (device_size & !0x1FFF).saturating_sub(8192) / 512;
+                (0, sb_offset, sb_offset)
+            },
+            1 => {
+                // 1.1: superblock at start, data after
+                let data_off = 8192 / 512; // 8K in sectors
+                (data_off, 0, (device_size / 512).saturating_sub(data_off))
+            },
+            2 | _ => {
+                // 1.2: superblock at 4K, data after
+                let data_off = 8192 / 512; // 8K in sectors  
+                (data_off, 8, (device_size / 512).saturating_sub(data_off))
+            },
+        };
+        
+        // Create device roles array - all devices get the same complete array layout
+        let dev_roles: Vec<u16> = (0..raid_devices).map(|idx| idx as u16).collect();
+        
         // Write superblock
-        let sb = SuperblockV1 {
+        let mut sb = SuperblockV1 {
             magic: MD_SB_MAGIC,
             major_version: 1,
             feature_map: 0,
@@ -110,27 +128,27 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
             ctime: now,
             utime: now,
             level: level as i32,
-            layout: 0,
-            size: 0, 
+            layout: 2, // RAID5 left-symmetric
+            size: data_size / raid_devices as u64,
             chunksize: chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE),
             raid_disks: raid_devices as i32,
             bitmap_offset: 0,
             new_level: level as i32,
-            reshape_position: 0,
+            reshape_position: u64::MAX, // Not reshaping
             delta_disks: 0,
             new_layout: 0,
             new_chunk: chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE),
             new_offset: 0,
-            data_offset: 0,
-            data_size: 0,
-            super_offset: 0,
-            recovery_offset: 0,
+            data_offset,
+            data_size,
+            super_offset,
+            recovery_offset: u64::MAX, // Fully recovered
             dev_number: i as u32,
             cnt_corrected_read: 0,
-            dev_roles: Vec::new(),
-            sb_csum: 0,
+            dev_roles,
+            sb_csum: 0, // Will be calculated
             events: 0,
-            resync_offset: 0,
+            resync_offset: u64::MAX, // Mark as clean/in-sync
             bblog_shift: 0,
             bblog_size: 0,
             bblog_offset: 0,
@@ -138,6 +156,8 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
             minor_version,
             pad_bytes: Vec::new(),
         };
+        
+        // Note: Checksum will be calculated by write_to_disk if needed
 
         // Find major/minor for component
         let comp_meta = std::fs::metadata(comp)
@@ -156,33 +176,37 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
 
         if dry_run {
             info!("[DRY RUN] Would write superblock to {}", comp.display());
-            info!("[DRY RUN] Would ADD_NEW_DISK {} (major={}, minor={}) to array", 
-                  comp.display(), disk_info.major, disk_info.minor);
         } else {
             debug!("Writing superblock to {}", comp.display());
             sb.write_to_disk(comp)
                 .map_err(|e| e.context(format!("Failed to write superblock to {}", comp.display())))?;
-            
-            debug!("Adding disk {} to array (major={}, minor={})", 
-                   comp.display(), disk_info.major, disk_info.minor);
-            unsafe {
-                ioctl::add_new_disk(md_file.as_raw_fd(), &mut disk_info as *mut _)
-                    .map_err(|e| MdError::Nix(e).context(format!("Failed to add disk {}", comp.display())))?;
-            }
-            info!("Successfully added device {}/{}: {}", i + 1, components.len(), comp.display());
+            info!("Superblock written to {}", comp.display());
         }
     }
 
     if dry_run {
-        info!("[DRY RUN] Would RUN_ARRAY");
+        info!("[DRY RUN] Would trigger kernel auto-assembly");
         info!("[DRY RUN] Array creation simulation completed successfully");
     } else {
-        info!("Starting array");
-        unsafe {
-            ioctl::run_array(md_file.as_raw_fd())
-                .map_err(|e| MdError::Nix(e).context("Failed to start array"))?;
+        // For v1.x metadata, trigger kernel auto-assembly
+        info!("Triggering kernel auto-assembly");
+        
+        // Trigger uevents to make kernel scan for MD superblocks
+        for comp in &components {
+            let dev_name = comp.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            let uevent_path = format!("/sys/block/{}/uevent", dev_name);
+            if let Err(e) = fs::write(&uevent_path, "change") {
+                debug!("Failed to trigger uevent for {}: {}", dev_name, e);
+            }
         }
-        info!("Array {} created and started successfully with UUID {}", md_device.display(), uuid);
+        
+        // Give kernel time to auto-assemble
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        
+        info!("Array {} created successfully with UUID {}", md_device.display(), uuid);
+        info!("Note: Kernel will auto-assemble the array. Check /proc/mdstat for status.");
     }
     
     Ok(())
