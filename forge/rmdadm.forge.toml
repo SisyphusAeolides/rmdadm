@@ -1,0 +1,7 @@
+[service]
+name = "rmdadm"
+description = "rmdadm RAID monitor / API daemon"
+exec = "/usr/sbin/rmdadm"
+args = ["daemon"]
+after = ["udev", "udev-settle"]
+restart = "on-failure"
